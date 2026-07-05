@@ -1,118 +1,157 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import { useState, useEffect, useCallback } from 'react';
+import Layout from '../components/Layout';
 import ServerCard from '../components/ServerCard';
 import AlertsPanel from '../components/AlertsPanel';
 import { useSocket } from '../hooks/useSocket';
-import type { ServerStatus, AnomalyAlert, ServerMetrics } from '../types';
-import { Server, Wifi, WifiOff } from 'lucide-react';
+import type { Server, Alert, MetricPoint } from '../types';
+import { Layers, RefreshCw } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const MAX_HISTORY = 60;
 
-const Dashboard: React.FC = () => {
-  const [servers, setServers] = useState<ServerStatus[]>([]);
-  const [alerts, setAlerts] = useState<AnomalyAlert[]>([]);
+export default function Dashboard() {
+  const [servers, setServers] = useState<Server[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Initialize bootstrap structural layouts from REST endpoints
-  useEffect(() => {
-    const fetchTopology = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const headers = { Authorization: `Bearer ${token}` };
-        
-        const [serversRes, alertsRes] = await Promise.all([
-          axios.get(`${API_URL}/servers`, { headers }),
-          axios.get(`${API_URL}/alerts`, { headers })
-        ]);
+  const token = localStorage.getItem('token');
+  const headers = { Authorization: `Bearer ${token}` };
 
-        setServers(serversRes.data);
-        setAlerts(alertsRes.data);
-      } catch (err) {
-        console.error("Infrastructure topology sync failure:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchTopology();
+  const fetchInitial = useCallback(async () => {
+    try {
+      const [serversRes, alertsRes] = await Promise.all([
+        fetch(`${API_URL}/servers`, { headers }),
+        fetch(`${API_URL}/alerts?limit=30`, { headers }),
+      ]);
+      const serversData = await serversRes.json();
+      console.log("resp",serversData);
+      const alertsData = await alertsRes.json();
+      setServers(Array.isArray(serversData) ? serversData : []);
+      setAlerts(Array.isArray(alertsData) ? alertsData : []);
+    } catch (err) {
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Handle incoming live stream frames from agent cluster
-  const handleMetricsUpdate = useCallback((payload: ServerMetrics) => {
-    setServers((prevServers) =>
-      prevServers.map((server) => {
-        if (server.id !== payload.serverId) return server;
+  useEffect(() => { fetchInitial(); }, [fetchInitial]);
 
-        const newHistory = [...server.history, {
-          cpu: payload.cpu,
-          memory: payload.memory,
-          disk: payload.disk,
-          timestamp: payload.timestamp
-        }].slice(-60); // Constrain sliding active trace timeline size to 60 points
+  useSocket({
+    onConnect: () => setConnected(true),
+    onDisconnect: () => setConnected(false),
+    onMetric: (data) => {
+      setServers(prev => prev.map(s => {
+        if (s.id !== data.serverId) return s;
+        const point: MetricPoint = {
+          timestamp: data.timestamp,
+          cpu: data.cpu,
+          memory: data.memory,
+          disk: data.disk,
+        };
+        const newHistory = [...s.history, point].slice(-MAX_HISTORY);
+        let status: Server['status'] = 'healthy';
+        if (data.cpu > 90 || data.memory > 90) status = 'critical';
+        else if (data.cpu > 75 || data.memory > 75) status = 'warning';
+        return { ...s, history: newHistory, status };
+      }));
+    },
+    onAlert: (alert) => {
+      setAlerts(prev => [{ ...alert, timestamp: Date.now() }, ...prev].slice(0, 50));
+    },
+  });
 
-        // Local inline warning evaluation triggers
-        let status: 'healthy' | 'warning' | 'critical' = 'healthy';
-        if (payload.cpu > 90 || payload.memory > 90) status = 'critical';
-        else if (payload.cpu > 75 || payload.memory > 75) status = 'warning';
-
-        return { ...server, status, history: newHistory };
-      })
-    );
-  }, []);
-
-  const handleNewAlert = useCallback((alert: AnomalyAlert) => {
-    setAlerts((prev) => [alert, ...prev].slice(0, 50));
-  }, []);
-
-  const { isConnected } = useSocket(handleMetricsUpdate, handleNewAlert);
-
-  if (loading) {
-    return (
-      <div className="h-[80vh] flex flex-col items-center justify-center text-sm font-mono tracking-widest text-gray-500 gap-4">
-        <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-        SYNCHRONIZING INFRASTRUCTURE TOPOLOGY...
-      </div>
-    );
-  }
+  const criticalCount = servers.filter(s => s.status === 'critical').length;
+  const warningCount = servers.filter(s => s.status === 'warning').length;
+  const healthyCount = servers.filter(s => s.status === 'healthy').length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center border-b border-gray-800/60 pb-4">
+    <Layout connected={connected}>
+      {/* Page header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-wider text-white">SYSTEM CLUSTER TOPOLOGY</h1>
-          <p className="text-xs text-gray-500 font-mono mt-1">REAL-TIME TELEMETRY FEED WORKSPACE</p>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            Infrastructure Overview
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+            Real-time telemetry across {servers.length} node{servers.length !== 1 ? 's' : ''}
+          </p>
         </div>
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-mono font-semibold ${
-          isConnected ? 'bg-emerald-950/30 border-emerald-800 text-emerald-400' : 'bg-red-950/30 border-red-800 text-red-400'
-        }`}>
-          {isConnected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-          {isConnected ? 'NODE STREAM LINKED' : 'PIPELINE OFFLINE'}
-        </div>
+        <button
+          onClick={fetchInitial}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all hover:opacity-80"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Refresh
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Core Node Grid Matrix */}
-        <div className="lg:col-span-3">
-          {servers.length === 0 ? (
-            <div className="bg-[#1f2833]/10 border border-gray-800 border-dashed rounded-xl p-12 text-center text-gray-500 flex flex-col items-center gap-3">
-              <Server className="w-8 h-8 text-gray-700" />
-              <span>No cluster nodes mapped to this controller context.</span>
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {[
+          { label: 'Healthy', count: healthyCount, color: 'var(--healthy)', bg: 'rgba(16,185,129,0.08)' },
+          { label: 'Warning', count: warningCount, color: 'var(--warning)', bg: 'rgba(245,158,11,0.08)' },
+          { label: 'Critical', count: criticalCount, color: 'var(--critical)', bg: 'rgba(239,68,68,0.08)' },
+        ].map(({ label, count, color, bg }) => (
+          <div
+            key={label}
+            className="rounded-xl px-4 py-3 flex items-center justify-between"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+          >
+            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            <span
+              className="text-2xl font-mono font-bold"
+              style={{ color }}
+            >
+              {count}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Main content */}
+      <div className="flex gap-6">
+        {/* Server grid */}
+        <div className="flex-1">
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[1, 2, 3].map(i => (
+                <div
+                  key={i}
+                  className="rounded-xl p-5 animate-pulse"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', height: '200px' }}
+                />
+              ))}
+            </div>
+          ) : servers.length === 0 ? (
+            <div
+              className="rounded-xl flex flex-col items-center justify-center py-20"
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+            >
+              <Layers className="w-10 h-10 mb-3" style={{ color: 'var(--text-muted)' }} />
+              <p className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                No servers registered
+              </p>
+              <p className="text-xs mt-1 font-mono" style={{ color: 'var(--text-muted)' }}>
+                Start an agent to begin monitoring
+              </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {servers.map((server) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {servers.map(server => (
                 <ServerCard key={server.id} server={server} />
               ))}
             </div>
           )}
         </div>
 
-        {/* Floating Side Stream Panel */}
-        <div className="lg:col-span-1">
+        {/* Alerts panel */}
+        <div className="w-80 flex-shrink-0">
           <AlertsPanel alerts={alerts} />
         </div>
       </div>
-    </div>
+    </Layout>
   );
-};
-
-export default Dashboard;
+}

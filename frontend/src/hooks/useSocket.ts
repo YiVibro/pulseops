@@ -1,45 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import type { MetricPoint, Alert } from '../types';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:5000';
+const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:4000';
 
-export const useSocket = (onMetricsUpdate?: (data: any) => void, onAlertNew?: (data: any) => void) => {
+interface UseSocketOptions {
+  onMetric?: (data: { serverId: string } & MetricPoint) => void;
+  onAlert?: (alert: Alert) => void;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+}
+
+export function useSocket(options: UseSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    
-    // Connect to backend websocket endpoint, injecting JWT securely into handshake payload
-    socketRef.current = io(WS_URL, {
+    const socket = io(WS_URL, {
       auth: { token },
-      transports: ['websocket']
+      reconnectionAttempts: 5,
+      reconnectionDelay: 2000,
     });
 
-    socketRef.current.on('connect', () => {
-      setIsConnected(true);
-      console.log('⚡ Pipeline established with Vortex socket cluster.');
-    });
+    socketRef.current = socket;
 
-    socketRef.current.on('disconnect', () => {
-      setIsConnected(false);
-    });
+    socket.on('connect', () => options.onConnect?.());
+    socket.on('disconnect', () => options.onDisconnect?.());
+    socket.on('metrics:update', (data) => options.onMetric?.(data));
+    socket.on('alert:new', (alert) => options.onAlert?.(alert));
 
-    // Real-time infrastructure stream listeners
-    if (onMetricsUpdate) {
-      socketRef.current.on('metrics:update', onMetricsUpdate);
-    }
-    if (onAlertNew) {
-      socketRef.current.on('alert:new', onAlertNew);
-    }
+    return () => { socket.disconnect(); };
+  }, []);
 
-    // Cleanup pipeline connection structure cleanly on unmount lifecycle hook
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
-  }, [onMetricsUpdate, onAlertNew]);
-
-  return { isConnected, socket: socketRef.current };
-};
+  return socketRef;
+}

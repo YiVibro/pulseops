@@ -1,0 +1,86 @@
+
+services:
+  # Central Redis (message broker)
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # TimescaleDB (Postgres + time-series extension)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: devops_monitor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+
+  # Express backend
+  backend:
+    build: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@timescaledb:5432/devops_monitor
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: supersecretkey
+      ADMIN_EMAIL: admin@monitor.com
+      ADMIN_PASSWORD: admin123
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      FRONTEND_URL: http://localhost:5173
+    depends_on:
+      - redis
+      - timescaledb
+
+  # Simulated server agents (pretend to be 3 separate machines)
+  agent-api-server:
+    build: ./agent
+    environment:
+      SERVER_ID: api-server-01
+      SERVER_LABEL: API Server
+      REDIS_URL: redis://redis:6379
+      AGENT_SECRET: secret_api_server
+      INTERVAL_MS: 5000
+    depends_on:
+       redis:
+         condition: service_healthy
+
+  agent-db-server:
+    build: ./agent
+    environment:
+      SERVER_ID: db-server-01
+      SERVER_LABEL: Database Server
+      REDIS_URL: redis://redis:6379
+      AGENT_SECRET: secret_db_server
+      INTERVAL_MS: 5000
+    depends_on:
+      redis:
+         condition: service_healthy
+
+  agent-worker:
+    build: ./agent
+    environment:
+      SERVER_ID: worker-01
+      SERVER_LABEL: Worker Node
+      REDIS_URL: redis://redis:6379
+      AGENT_SECRET: secret_worker
+      INTERVAL_MS: 5000
+    depends_on:
+     redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+  pg_data:

@@ -1,98 +1,114 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ResponsiveContainer, LineChart, Line } from 'recharts';
-import type { ServerStatus } from '../types';
-import { Cpu, HardDrive, Layers, Activity } from 'lucide-react';
+import { Server, Cpu, HardDrive, MemoryStick, ChevronRight } from 'lucide-react';
+import MetricChart from './MetricChart';
+import type { Server as ServerType } from '../types';
 
-interface ServerCardProps {
-  server: ServerStatus;
-}
+interface Props { server: ServerType; }
 
-const ServerCard: React.FC<ServerCardProps> = ({ server }) => {
-  const navigate = useNavigate();
-  const latest = server.history[server.history.length - 1] || { cpu: 0, memory: 0, disk: 0 };
-
-  const statusColors = {
-    healthy: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
-    warning: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
-    critical: 'bg-red-500/10 border-red-500/30 text-red-400 animate-pulse',
-  };
-
-  const MiniSparkline = ({ dataKey, color }: { dataKey: 'cpu' | 'memory' | 'disk'; color: string }) => (
-    <div className="h-8 w-24">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={server.history}>
-          <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-
-  return (
-    <div 
-      onClick={() => navigate(`/dashboard/${server.id}`)}
-      className="bg-[#1f2833]/20 border border-gray-800 rounded-xl p-6 cursor-pointer hover:border-gray-700 hover:bg-[#1f2833]/40 transition duration-200 group flex flex-col justify-between"
-    >
-      <div>
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <h3 className="text-white font-semibold text-lg tracking-wide group-hover:text-[#45f3ff] transition">
-              {server.name}
-            </h3>
-            <span className="text-xs text-gray-500 font-mono">{server.id}</span>
-          </div>
-          <span className={`text-xs px-2.5 py-1 rounded-full uppercase tracking-wider border font-semibold ${statusColors[server.status]}`}>
-            {server.status}
-          </span>
-        </div>
-
-        {/* Dynamic Metric Rows */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-sm">
-              <Cpu className="w-4 h-4 text-cyan-400" />
-              <span className="text-gray-400">Processor</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <MiniSparkline dataKey="cpu" color="#06b6d4" />
-              <span className="font-mono text-sm font-semibold text-white w-12 text-right">{latest.cpu.toFixed(1)}%</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-sm">
-              <Layers className="w-4 h-4 text-purple-400" />
-              <span className="text-gray-400">Memory</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <MiniSparkline dataKey="memory" color="#a855f7" />
-              <span className="font-mono text-sm font-semibold text-white w-12 text-right">{latest.memory.toFixed(1)}%</span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 text-sm">
-              <HardDrive className="w-4 h-4 text-emerald-400" />
-              <span className="text-gray-400">Storage</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <MiniSparkline dataKey="disk" color="#10b981" />
-              <span className="font-mono text-sm font-semibold text-white w-12 text-right">{latest.disk.toFixed(1)}%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-gray-800/60 flex items-center justify-between text-xs text-gray-500">
-        <span className="flex items-center gap-1.5">
-          <Activity className="w-3.5 h-3.5 text-gray-600" /> Telemetry Active
-        </span>
-        <span className="font-mono">
-          {server.history.length > 0 ? new Date(latest.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--:--'}
-        </span>
-      </div>
-    </div>
-  );
+const STATUS_COLORS = {
+  healthy: 'var(--healthy)',
+  warning: 'var(--warning)',
+  critical: 'var(--critical)',
+  offline: 'var(--text-secondary)',
 };
 
-export default ServerCard;
+const STATUS_BG = {
+  healthy: 'rgba(16,185,129,0.1)',
+  warning: 'rgba(245,158,11,0.1)',
+  critical: 'rgba(239,68,68,0.1)',
+  offline: 'rgba(100,116,139,0.1)',
+};
+
+export default function ServerCard({ server }: Props) {
+  const navigate = useNavigate();
+  const latest = server.history[server.history.length - 1];
+
+  return (
+    <div
+      onClick={() => navigate(`/dashboard/${server.id}`)}
+      className="rounded-xl p-5 cursor-pointer transition-all duration-200 group"
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-bright)';
+        (e.currentTarget as HTMLElement).style.background = 'var(--bg-card-hover)';
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
+        (e.currentTarget as HTMLElement).style.background = 'var(--bg-card)';
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center justify-center w-8 h-8 rounded-lg"
+            style={{ background: STATUS_BG[server.status] }}
+          >
+            <Server className="w-4 h-4" style={{ color: STATUS_COLORS[server.status] }} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {server.name}
+            </p>
+            <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+              {server.id}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-mono"
+            style={{ background: STATUS_BG[server.status], color: STATUS_COLORS[server.status] }}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${server.status !== 'offline' ? 'pulse-dot' : ''}`}
+              style={{ background: STATUS_COLORS[server.status] }}
+            />
+            {server.status}
+          </div>
+          <ChevronRight
+            className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ color: 'var(--text-secondary)' }}
+          />
+        </div>
+      </div>
+
+      {/* Sparkline */}
+      <div className="mb-4">
+        <MetricChart data={server.history} metric="cpu" height={48} />
+      </div>
+
+      {/* Metric row */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { key: 'cpu' as const, label: 'CPU', icon: Cpu, color: '#3b82f6' },
+          { key: 'memory' as const, label: 'MEM', icon: MemoryStick, color: '#8b5cf6' },
+          { key: 'disk' as const, label: 'DISK', icon: HardDrive, color: '#06b6d4' },
+        ].map(({ key, label, icon: Icon, color }) => (
+          <div key={key}>
+            <div className="flex items-center gap-1 mb-1">
+              <Icon className="w-3 h-3" style={{ color: 'var(--text-secondary)' }} />
+              <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            </div>
+            <p className="text-sm font-mono font-semibold" style={{ color }}>
+              {(latest?.[key] ?? 0).toFixed(1)}%
+            </p>
+            <div className="metric-bar mt-1">
+              <div
+                className="metric-bar-fill"
+                style={{
+                  width: `${latest?.[key] ?? 0}%`,
+                  background: (latest?.[key] ?? 0) > 90 ? 'var(--critical)'
+                    : (latest?.[key] ?? 0) > 75 ? 'var(--warning)' : color,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

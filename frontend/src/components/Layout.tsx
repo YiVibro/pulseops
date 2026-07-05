@@ -1,9 +1,14 @@
-import React from 'react';
-import { Outlet, useNavigate, Link } from 'react-router-dom';
-import { ShieldAlert, LogOut, LayoutDashboard } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { LayoutDashboard, LogOut, Activity, Shield } from 'lucide-react';
 
-const Layout: React.FC = () => {
+interface Props {
+  children: React.ReactNode;
+  connected?: boolean;
+}
+
+export default function Layout({ children, connected = false }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -11,37 +16,80 @@ const Layout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0c10] text-[#c5c6c7] font-sans selection:bg-[#45f3ff] selection:text-black">
-      {/* Structural Global Top Navbar */}
-      <nav className="border-b border-gray-800 bg-[#1f2833]/40 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
-        <Link to="/dashboard" className="flex items-center gap-3 hover:opacity-90 transition">
-          <ShieldAlert className="text-[#45f3ff] w-6 h-6 animate-pulse" />
-          <span className="font-bold tracking-wider text-xl bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-            VORTEX // OBSERVE
-          </span>
-        </Link>
-        
-        <div className="flex items-center gap-6">
-          <Link to="/dashboard" className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition">
-            <LayoutDashboard w-4 h-4 />
-            Dashboard
-          </Link>
-          <button 
-            onClick={handleLogout}
-            className="flex items-center gap-2 border border-gray-800 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-950/30 hover:border-red-800 hover:text-red-400 transition duration-200"
+    <div className="min-h-screen grid-bg" style={{ background: 'var(--bg-base)' }}>
+      {/* Top Nav */}
+      <nav
+        className="sticky top-0 z-50 flex items-center justify-between px-6 py-3 border-b"
+        style={{ background: 'rgba(7,11,20,0.95)', borderColor: 'var(--border)', backdropFilter: 'blur(12px)' }}
+      >
+        {/* Brand */}
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center justify-center w-8 h-8 rounded-lg"
+            style={{ background: 'var(--accent-glow)', border: '1px solid rgba(59,130,246,0.3)' }}
           >
-            <LogOut className="w-4 h-4" />
-            Sign Out
+            <Activity className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+          </div>
+          <div>
+            <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--text-primary)' }}>
+              PulseOps
+            </span>
+            <span className="text-xs ml-2 font-mono" style={{ color: 'var(--text-secondary)' }}>
+              monitor
+            </span>
+          </div>
+        </div>
+
+        {/* Nav links */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all"
+            style={{
+              background: location.pathname === '/dashboard' ? 'var(--accent-glow)' : 'transparent',
+              color: location.pathname === '/dashboard' ? 'var(--accent)' : 'var(--text-secondary)',
+              border: location.pathname === '/dashboard' ? '1px solid rgba(59,130,246,0.2)' : '1px solid transparent',
+            }}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            Dashboard
+          </button>
+        </div>
+
+        {/* Right side */}
+        <div className="flex items-center gap-4">
+          {/* Connection status */}
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full ${connected ? 'pulse-dot' : ''}`}
+              style={{ background: connected ? 'var(--healthy)' : 'var(--critical)' }}
+            />
+            <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+              {connected ? 'LIVE' : 'OFFLINE'}
+            </span>
+          </div>
+
+          <div className="w-px h-4" style={{ background: 'var(--border)' }} />
+
+          {/* Shield icon */}
+          <Shield className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all hover:opacity-80"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Sign out
           </button>
         </div>
       </nav>
 
-      {/* Main Container Content Slot */}
-      <main className="max-w-7xl mx-auto p-6 transition-all duration-300">
-        <Outlet />
+      {/* Page content */}
+      <main className="p-6">
+        {children}
       </main>
     </div>
   );
-};
-
-export default Layout;
+}

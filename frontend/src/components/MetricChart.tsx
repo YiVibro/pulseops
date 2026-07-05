@@ -1,57 +1,95 @@
-import React from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import type { MetricData } from '../types';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import type { MetricPoint, MetricKey } from '../types';
 
-interface MetricChartProps {
-  data: MetricData[];
-  dataKey: 'cpu' | 'memory' | 'disk';
-  color: string;
-  label: string;
+interface Props {
+  data: MetricPoint[];
+  metric: MetricKey;
+  height?: number;
+  showAxes?: boolean;
+  color?: string;
 }
 
-const MetricChart: React.FC<MetricChartProps> = ({ data, dataKey, color, label }) => {
-  const formatTime = (tick: number) => {
-    return new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
-
-  return (
-    <div className="bg-[#1f2833]/30 border border-gray-800 rounded-xl p-5 backdrop-blur-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-sm font-semibold tracking-wider text-gray-400 uppercase">{label} Timeline</h3>
-        <span className="text-xs bg-gray-900 border border-gray-800 px-2.5 py-1 rounded text-gray-300 font-mono">
-          {data[data.length - 1]?.[dataKey]?.toFixed(1) || 0}% CURRENT
-        </span>
-      </div>
-      
-      <div className="h-64 w-full font-mono text-xs">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2833" vertical={false} />
-            <XAxis 
-              dataKey="timestamp" 
-              tickFormatter={formatTime} 
-              stroke="#4a5568" 
-              dy={10}
-            />
-            <YAxis domain={[0, 100]} stroke="#4a5568" dx={-5} />
-            <Tooltip
-              contentStyle={{ backgroundColor: '#0b0c10', borderColor: '#2d3748', borderRadius: '8px' }}
-              labelFormatter={(label) => `Time: ${new Date(label).toLocaleTimeString()}`}
-              formatter={(value: any) => [`${Number(value).toFixed(2)}%`, label]}
-            />
-            <Line
-              type="monotone"
-              dataKey={dataKey}
-              stroke={color}
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
+const METRIC_COLORS: Record<MetricKey, string> = {
+  cpu: '#3b82f6',
+  memory: '#8b5cf6',
+  disk: '#06b6d4',
 };
 
-export default MetricChart;
+const METRIC_LABELS: Record<MetricKey, string> = {
+  cpu: 'CPU',
+  memory: 'MEM',
+  disk: 'DISK',
+};
+
+export default function MetricChart({ data, metric, height = 60, showAxes = false, color }: Props) {
+  const lineColor = color || METRIC_COLORS[metric];
+  const latest = data[data.length - 1]?.[metric] ?? 0;
+
+  return (
+    <div>
+      {showAxes && (
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-mono font-medium" style={{ color: 'var(--text-secondary)' }}>
+            {METRIC_LABELS[metric]}
+          </span>
+          <span className="text-sm font-mono font-semibold" style={{ color: lineColor }}>
+            {latest.toFixed(1)}%
+          </span>
+        </div>
+      )}
+      <ResponsiveContainer width="100%" height={height}>
+        <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
+          <defs>
+            <linearGradient id={`grad-${metric}-${lineColor}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={lineColor} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {showAxes && (
+            <>
+              <XAxis dataKey="timestamp" hide />
+              <YAxis domain={[0, 100]} hide />
+              <Tooltip
+                contentStyle={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-bright)',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--text-primary)',
+                }}
+                formatter={(val) =>{
+                  if(typeof val!== "number"){
+                    return [String(val), METRIC_LABELS[metric]];
+                  }
+                  return [`${val.toFixed(1)}%`, METRIC_LABELS[metric]];
+                } }
+                labelFormatter={() => ''}
+              />
+            </>
+          )}
+          <Area
+            type="monotone"
+            dataKey={metric}
+            stroke={lineColor}
+            strokeWidth={1.5}
+            fill={`url(#grad-${metric}-${lineColor})`}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+      {!showAxes && (
+        <div className="metric-bar mt-1">
+          <div
+            className="metric-bar-fill"
+            style={{
+              width: `${latest}%`,
+              background: latest > 90 ? 'var(--critical)' : latest > 75 ? 'var(--warning)' : lineColor,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}

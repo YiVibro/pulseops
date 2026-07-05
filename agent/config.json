@@ -1,0 +1,9 @@
+{
+  "serverId": "server-01",
+  "serverLabel": "API Server",
+  "redisUrl": "redis://redis:6379",
+  "agentSecret": "REPLACE_WITH_SECRET_FROM_BACKEND",
+  "intervalMs": 5000,
+  "streamKey": "metrics:stream",
+  "maxStreamLen": 1000
+}
