@@ -17,10 +17,20 @@ interface AgentSecretMap {
 // In production, load this from PostgreSQL (agents table)
 async function getAgentSecret(serverId: string): Promise<string | null> {
   // TODO: replace with DB lookup
-  const secrets: AgentSecretMap = {
-    'server-01': process.env.AGENT_SECRET_SERVER_01 || '',
-  };
-  return secrets[serverId] || null;
+  // const secrets: AgentSecretMap = {
+  //   'server-01': process.env.AGENT_SECRET_SERVER_01 || '',
+  // };
+  // return secrets[serverId] || null;
+     try {
+    const result = await pool.query(
+      'SELECT secret_hash FROM servers WHERE id = $1',
+      [serverId]
+    );
+    return result.rows[0]?.secret_hash || null;
+  } catch (err) {
+    console.error('DB lookup failed:', err);
+    return null;
+  }
 }
 
 function verifySignature(json: string, signature: string, secret: string): boolean {
