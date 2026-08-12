@@ -5,9 +5,8 @@ const router = Router();
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@monitor.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+const JWT_SECRET = process.env.JWT_SECRET || 'super duper secret';
 
-// POST /api/auth/login
 router.post('/login', (req: Request, res: Response) => {
   const { email, password } = req.body;
 

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 
 type token=string;
 
-const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+const JWT_SECRET = process.env.JWT_SECRET || 'csuper duper secret';
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;

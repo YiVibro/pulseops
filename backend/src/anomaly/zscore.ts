@@ -1,5 +1,5 @@
 import pool from '../db/client.js';
-import { triggerAlert } from '../alerts/slackWebhook.js';
+import { sendTelegramAlert } from '../alerts/telegramAlert.js';
 
 const WINDOW_SIZE = 20; // last 20 readings for rolling stats
 const THRESHOLDS = {
@@ -68,7 +68,7 @@ export async function detectAnomaly(
   );
 
   // fire Slack
-  await triggerAlert({ serverId, metric, value, severity, message });
+  await sendTelegramAlert(serverId, metric, value);
 
   return { severity, message };
 }

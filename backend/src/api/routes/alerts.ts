@@ -3,7 +3,6 @@ import pool from '../../db/client.js';
 
 const router = Router();
 
-// GET /api/alerts?serverId=server-01&limit=20
 router.get('/', async (req: Request, res: Response) => {
   const { serverId, limit } = req.query;
   const limitNum = parseInt(limit as string) || 20;

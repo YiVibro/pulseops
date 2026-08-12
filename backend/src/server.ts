@@ -10,11 +10,15 @@ import alertsRouter from './api/routes/alerts.js';
 import authRouter from './api/routes/auth.js';
 import { authMiddleware } from './api/middleware/auth.js';
 import ServerRouter from './api/routes/servers.js';
+import generateToken from './api/routes/token.js';
 
 const app = express();
 const httpServer = http.createServer(app);
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE']
+}));
 app.use(express.json());
 
 app.get('/api/health', (req, res) => {
@@ -23,9 +27,10 @@ app.get('/api/health', (req, res) => {
 
 // routes
 app.use('/api/auth', authRouter);
-app.use('/api/metrics', authMiddleware, metricsRouter);
-app.use('/api/alerts', authMiddleware, alertsRouter);
+app.use('/api/metrics',  metricsRouter);//authMiddleware,
+app.use('/api/alerts',  alertsRouter);//authMiddleware,
 app.use('/api/servers', ServerRouter);
+app.use('/api/generate-setup-token', generateToken);
 
 // init socket
 initSocket(httpServer);
@@ -34,6 +39,6 @@ initSocket(httpServer);
 consumeLoop().catch(console.error);
 
 const PORT = process.env.PORT || 4000;
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT,() => {
   console.log(`Backend running on port ${PORT}`);
 });

@@ -4,13 +4,13 @@ import type { Alert } from '../types';
 interface Props { alerts: Alert[]; }
 
 const SEVERITY_COLOR = {
-  warning: 'var(--warning)',
-  critical: 'var(--critical)',
+  warning: 'var(--neon-yellow)',
+  critical: 'var(--neon-pink)',
 };
 
 const SEVERITY_BG = {
-  warning: 'rgba(245,158,11,0.08)',
-  critical: 'rgba(239,68,68,0.08)',
+  warning: 'rgba(254, 254, 0, 0.05)',
+  critical: 'rgba(255, 0, 127, 0.05)',
 };
 
 function timeAgo(ts: number | string | undefined): string {
@@ -22,86 +22,102 @@ function timeAgo(ts: number | string | undefined): string {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-export default function AlertsPanel({ alerts }: Props) {
+export default function AlertsPanel({ alerts = [] }: Props) {
   return (
     <div
-      className="rounded-xl flex flex-col"
+      className="rounded flex flex-col w-full font-mono text-left"
       style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
+        background: 'var(--bg-panel)',
+        border: '1px solid rgba(0, 240, 255, 0.15)',
         maxHeight: '480px',
+        boxShadow: '0 0 15px rgba(0, 0, 0, 0.4)'
       }}
     >
-      {/* Header */}
+      {/* Panel Header */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: 'var(--border)' }}
+        className="flex flex-row items-center justify-between px-4 py-3 border-b"
+        style={{ borderColor: 'rgba(0, 240, 255, 0.15)' }}
       >
-        <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Anomaly Feed
+        <div className="flex flex-row items-center gap-2">
+          <Bell className="w-4 h-4 text-[var(--neon-cyan)] animate-pulse" />
+          <span className="text-xs font-black uppercase tracking-widest text-white">
+            // INCIDENT_STREAM
           </span>
         </div>
         {alerts.length > 0 && (
           <span
-            className="text-xs font-mono px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--critical)' }}
+            className="text-[10px] font-bold px-2 py-0.5 rounded border tracking-wider"
+            style={{ 
+              borderColor: 'var(--neon-pink)', 
+              color: 'var(--neon-pink)',
+              backgroundColor: 'rgba(255,0,127,0.1)' 
+            }}
           >
-            {alerts.length}
+            {alerts.length} THREATS
           </span>
         )}
       </div>
 
-      {/* Alerts list */}
+      {/* Dynamic Incidents Stream List */}
       <div className="flex-1 overflow-y-auto">
         {alerts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-2">
-            <AlertCircle className="w-8 h-8" style={{ color: 'var(--text-muted)' }} />
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No anomalies detected</p>
-            <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>All metrics within baseline</p>
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <div className="p-3 rounded-full border border-zinc-800 bg-zinc-950/50">
+              <AlertCircle className="w-6 h-6 text-zinc-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">FEED_SECURE</p>
+              <p className="text-[10px] text-zinc-500 font-mono mt-0.5">All metrics within operational baseline.</p>
+            </div>
           </div>
         ) : (
           alerts.map((alert, i) => (
             <div
               key={alert.id || i}
-              className="flex items-start gap-3 px-4 py-3 border-b transition-colors"
+              className="flex flex-row items-start gap-3 px-4 py-3.5 border-b transition-colors hover:bg-zinc-900/30"
               style={{
-                borderColor: 'var(--border)',
+                borderColor: 'rgba(24, 24, 37, 0.8)',
                 background: i === 0 ? SEVERITY_BG[alert.severity] : 'transparent',
               }}
             >
-              <div className="mt-0.5">
+              {/* Threat Level Icon Indicator */}
+              <div className="mt-0.5 flex-shrink-0">
                 <AlertTriangle
                   className="w-4 h-4"
                   style={{ color: SEVERITY_COLOR[alert.severity] }}
                 />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-0.5">
+
+              {/* Threat Payload Context Metadata */}
+              <div className="flex-1 min-w-0 flex flex-col gap-1 text-left">
+                <div className="flex flex-row items-center justify-between gap-2">
                   <span
-                    className="text-xs font-mono font-semibold uppercase"
+                    className="text-[10px] font-black tracking-wider uppercase"
                     style={{ color: SEVERITY_COLOR[alert.severity] }}
                   >
-                    {alert.severity}
+                    [{alert.severity}]
                   </span>
-                  <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                  <span className="text-[10px] text-zinc-500">
                     {timeAgo(alert.timestamp || alert.created_at)}
                   </span>
                 </div>
-                <p className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>
+                
+                <p className="text-xs text-zinc-300 break-words font-mono">
                   {alert.message}
                 </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                    {alert.serverId}
+
+                {/* Machine Target Matrix Mapping Footer */}
+                <div className="flex flex-row items-center gap-2 mt-1 text-[10px] font-mono">
+                  <span className="text-zinc-500 uppercase tracking-tight">Node:</span>
+                  <span className="text-[var(--neon-cyan)] truncate font-semibold">
+                    {alert.serverId || 'sys-host-unknown'}
                   </span>
-                  <span style={{ color: 'var(--text-muted)' }}>·</span>
+                  <span className="text-zinc-700">•</span>
                   <span
-                    className="text-xs font-mono font-semibold"
+                    className="font-bold"
                     style={{ color: SEVERITY_COLOR[alert.severity] }}
                   >
-                    {alert.value?.toFixed(1)}%
+                    V_CRIT: {alert.value?.toFixed(1) ?? '0.0'}%
                   </span>
                 </div>
               </div>

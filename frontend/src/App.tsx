@@ -3,6 +3,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ServerDetail from './pages/ServerDetail';
 import ProtectedRoute from './components/ProtectedRoute';
+import TerminalDashboard from './pages/TerminalDashboard';
 
 export default function App() {
   return (
@@ -14,6 +15,9 @@ export default function App() {
         } />
         <Route path="/dashboard/:serverId" element={
           <ProtectedRoute><ServerDetail /></ProtectedRoute>
+        } />
+        <Route path="/terminal" element={
+          <TerminalDashboard />
         } />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

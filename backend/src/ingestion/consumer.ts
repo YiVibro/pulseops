@@ -4,7 +4,7 @@ import { writeMetric } from './writer.js';
 import { detectAnomaly } from '../anomaly/zscore.js';
 import { emitMetric, emitAlert } from '../sockets/liveMetrics.js';
 import pool from '../db/client.js';
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+const redis = new Redis( 'vortex-redis');
 
 const STREAM_KEY = 'metrics:stream';
 const GROUP_NAME = 'metrics-consumer-group';
