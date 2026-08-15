@@ -7,12 +7,12 @@ export default defineConfig({
   server:{
     proxy:{
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://18.138.103.202:5000',
         changeOrigin: true,
         secure: false,
       },
        '/socket.io': {
-        target: 'http://localhost:5000',
+        target: 'http://18.138.103.202:5000',
         changeOrigin: true,
         secure: false,
         ws: true,

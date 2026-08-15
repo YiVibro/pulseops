@@ -1,170 +1,336 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Server, RefreshCw, AlertTriangle, ShieldCheck, Cpu, Database } from 'lucide-react';
-import { ServerCard } from '../components/ServerCard';
-import AlertsPanel from '../components/AlertsPanel';
+import React, { useState, useEffect } from 'react';
 import { useSocket } from '../hooks/useSocket';
-import type { Server as ServerType, Alert, MetricPoint } from '../types';
+import { Cpu, HardDrive, Layers, Wifi, Terminal, Server, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { AddServerModal } from '../components/AddServerModal';
+import { supabase } from '../lib/supabase';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
-const MAX_HISTORY = 60;
+export interface NetworkInterface {
+  name: string;
+  download: string;
+  upload: string;
+}
 
-export default function Dashboard() {
-  const [servers, setServers] = useState<ServerType[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
+export interface DiskPartition {
+  name: string;
+  usedGiB: number;
+  totalGiB: number;
+  percent: number;
+}
 
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+export interface DynamicServerMetrics {
+  serverId: string;
+  serverName: string;
+  ipAddress: string;
+  uptime: string;
+  status: 'healthy' | 'warning' | 'critical';
+  cpuTotal: number;
+  cpuCores: number[];
+  memory: {
+    usedGiB: number;
+    totalGiB: number;
+    percent: number;
+    swapUsedGiB: number;
+  };
+  disks: DiskPartition[];
+  network: NetworkInterface[];
+}
 
-  const fetchInitial = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [serversRes, alertsRes] = await Promise.all([
-        fetch(`${API_URL}/servers`),// { headers }
-        fetch(`${API_URL}/alerts?limit=30`),//{ headers }
-      ]);
-      const serversData = await serversRes.json();
-      console.log('Fetched servers:', serversData);
-      const alertsData = await alertsRes.json();
-      setServers(Array.isArray(serversData) ? serversData : []);
-      setAlerts(Array.isArray(alertsData) ? alertsData : []);
-    } catch (err) {
-      console.error('Fetch engine diagnostic exception:', err);
-    } finally {
-      setLoading(false);
+const AsciiBar = ({ percent, color = 'text-[#45f3ff]' }: { percent: number; color?: string }) => {
+  const totalBlocks = 16;
+  const filledBlocks = Math.round((Math.min(Math.max(percent, 0), 100) / 100) * totalBlocks);
+  const emptyBlocks = totalBlocks - filledBlocks;
+  const bar = '█'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+  return <span className={`font-mono font-bold ${color}`}>{bar}</span>;
+};
+
+const TerminalDashboard = () => {
+  // 1. Initialize state with NO hardcoded servers
+  const [servers, setServers] = useState<Record<string, DynamicServerMetrics>>({});
+  const [activeServerId, setActiveServerId] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // 2. Load user's registered servers from Supabase
+  useEffect(() => {
+    async function loadUserServers() {
+      try {
+        setLoading(true);
+        // Supabase RLS automatically filters rows by auth.uid()
+        const { data, error } = await supabase
+          .from('servers')
+          .select('id, label, created_at')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const initialMap: Record<string, DynamicServerMetrics> = {};
+          data.forEach((s: any) => {
+            initialMap[s.id] = {
+              serverId: s.id,
+              serverName: s.label || s.id,
+              ipAddress: 'Connecting...',
+              uptime: '0m',
+              status: 'healthy',
+              cpuTotal: 0,
+              cpuCores: [],
+              memory: { usedGiB: 0, totalGiB: 0, percent: 0, swapUsedGiB: 0 },
+              disks: [],
+              network: [],
+            };
+          });
+
+          setServers(initialMap);
+          setActiveServerId(data[0].id);
+        }
+      } catch (err: any) {
+        console.error('[SUPABASE FETCH ERROR]:', err?.message || err);
+      } finally {
+        setLoading(false);
+      }
     }
+
+    loadUserServers();
   }, []);
 
-  useEffect(() => { 
-    fetchInitial(); 
-  }, [fetchInitial]);
-
   useSocket({
-    onConnect: () => setConnected(true),
-    onDisconnect: () => setConnected(false),
-    onMetric: (data) => {
-      setServers(prev => prev.map(s => {
-        if (s.id !== data.serverId) return s;
-        const point: MetricPoint = {
-          timestamp: data.timestamp,
-          cpu: data.cpu,
-          memory: data.memory,
-          disk: data.disk,
-        };
-        const newHistory = [...s.history, point].slice(-MAX_HISTORY);
-        let status: ServerType['status'] = 'healthy';
-        if (data.cpu > 90 || data.memory > 90) status = 'critical';
-        else if (data.cpu > 75 || data.memory > 75) status = 'warning';
-        return { ...s, history: newHistory, status };
-      }));
-    },
-    onAlert: (alert) => {
-      setAlerts(prev => [{ ...alert, timestamp: Date.now() }, ...prev].slice(0, 50));
-    },
-  });
+    onMessage: (payload: any) => {
+      if (!payload?.serverId) return;
 
-  const healthyCount = servers.filter(s => s.status === 'healthy').length;
-  const warningCount = servers.filter(s => s.status === 'warning').length;
-  const criticalCount = servers.filter(s => s.status === 'critical').length;
+      const targetId = payload.serverId;
+
+      setServers((prev) => {
+        const existing = prev[targetId] || {};
+
+        // Extract values directly from flat telemetry payload
+        const cpuLoad = Math.round(Number(payload.cpu || 0));
+        const memPercent = Math.round(Number(payload.memory || 0));
+        const diskPercent = Math.round(Number(payload.disk || 0));
+
+        return {
+          ...prev,
+          [targetId]: {
+            ...existing,
+            serverId: targetId,
+            serverName: existing.serverName || targetId,
+            ipAddress: payload.ipAddress || existing.ipAddress || '172.31.4.225',
+            uptime: payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : 'LIVE',
+            status: cpuLoad > 85 || memPercent > 90 ? 'warning' : 'healthy',
+
+            // 1. CPU
+            cpuTotal: cpuLoad,
+            cpuCores: payload.cpuCores || [cpuLoad], // Single core summary fallback
+
+            // 2. Memory (Mapped from percentage)
+            memory: {
+              totalGiB: payload.memoryTotal || existing.memory?.totalGiB || 16.0, // Default estimate if not sent
+              usedGiB: Number((((payload.memoryTotal || 16) * memPercent) / 100).toFixed(1)),
+              percent: memPercent,
+              swapUsedGiB: 0,
+            },
+
+            // 3. Disk Partitions (Mapped from flat percentage)
+            disks: payload.disks || [
+              {
+                name: '/ (root)',
+                usedGiB: Number(((100 * diskPercent) / 100).toFixed(1)),
+                totalGiB: 100,
+                percent: diskPercent,
+              },
+            ],
+
+            // 4. Network Interfaces
+            network: payload.network || [
+              {
+                name: 'eth0',
+                download: payload.download || 'Active',
+                upload: payload.upload || 'Active',
+              },
+            ],
+          },
+        };
+      });
+
+      if (!activeServerId) {
+        setActiveServerId(targetId);
+      }
+    },
+  } as any);
+
+  const currentServer = servers[activeServerId] || Object.values(servers)[0];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black text-[#c5c6c7] font-mono p-6 flex items-center justify-center">
+        <span className="animate-pulse text-cyan-400">LOADING REGISTERED NODES FROM SUPABASE...</span>
+      </div>
+    );
+  }
+
+  if (!currentServer) {
+    return (
+      <div className="min-h-screen bg-black text-[#c5c6c7] font-mono p-6 flex flex-col items-center justify-center space-y-4">
+        <span className="text-yellow-400 font-bold">NO ACTIVE SERVERS LINKED TO THIS ACCOUNT</span>
+        <p className="text-xs text-gray-500">Click below to onboard a target machine using the setup script.</p>
+        <AddServerModal />
+      </div>
+    );
+  }
 
   return (
-    /* Added px-4 sm:px-6 md:px-8 max-w-7xl mx-auto to step layout strictly off screen borders */
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 md:px-8 py-4 space-y-8 animate-fadeIn text-left font-mono">
-      
-      {/* Header Segment Grid */}
-      <div className="flex flex-row items-center justify-between border-b border-zinc-800/80 pb-5">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white uppercase">
-            System <span style={{ color: 'var(--neon-cyan)' }}>Architecture</span> Overview
-          </h1>
-          <p className="text-xs font-mono mt-1" style={{ color: 'var(--text-secondary)' }}>
-            Telemetry stream operational // tracking {servers.length} target node clusters
-          </p>
-        </div>
-        
-        <button 
-          onClick={fetchInitial}
-          className="flex flex-row items-center gap-2 px-4 py-2 border border-[var(--neon-cyan)] text-[var(--neon-cyan)] bg-[var(--neon-cyan)]/5 hover:bg-[var(--neon-cyan)]/10 font-bold transition-all uppercase tracking-wider text-xs cursor-pointer"
-          style={{ boxShadow: '0 0 10px rgba(0,240,255,0.1)' }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Sync Diagnostics</span>
-        </button>
-      </div>
-
-      {/* Cyber Metrics Diagnostic Cards Counter Grid Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full">
-        <div className="bg-zinc-900/40 border border-zinc-800/60 p-5 rounded-lg flex flex-row items-center justify-between shadow-lg">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Node_State_Ok</p>
-            <p className="text-3xl font-black mt-1" style={{ color: 'var(--neon-green)' }}>{healthyCount}</p>
-          </div>
-          <ShieldCheck className="w-8 h-8 opacity-40" style={{ color: 'var(--neon-green)' }} />
+    <div className="min-h-screen bg-black text-[#c5c6c7] font-mono p-4 select-none">
+      {/* Top Header Bar */}
+      <div className="border border-gray-800 bg-[#0b0c10] px-4 py-2 flex flex-wrap justify-between items-center text-xs text-gray-400 mb-3 gap-2">
+        <div className="flex items-center gap-2 text-cyan-400 font-bold">
+          <Terminal className="w-4 h-4 animate-pulse" />
+          <span>VORTEX-TUI v2.0 // MULTI-NODE OBSERVER</span>
         </div>
 
-        <div className="bg-zinc-900/40 border border-zinc-800/60 p-5 rounded-lg flex flex-row items-center justify-between shadow-lg">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Node_State_Warn</p>
-            <p className="text-3xl font-black mt-1" style={{ color: 'var(--neon-yellow)' }}>{warningCount}</p>
+        <div className="flex items-center gap-4">
+          <div>SYS_UPTIME: {currentServer.uptime || 'N/A'}</div>
+          <div className="flex items-center gap-2 font-bold">
+            {currentServer.status === 'healthy' ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> NOMINAL
+              </span>
+            ) : (
+              <span className="text-amber-400 flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 animate-bounce" /> ATTENTION REQUIRED
+              </span>
+            )}
           </div>
-          <AlertTriangle className="w-8 h-8 opacity-40" style={{ color: 'var(--neon-yellow)' }} />
-        </div>
-
-        <div className="bg-zinc-900/40 border border-zinc-800/60 p-5 rounded-lg flex flex-row items-center justify-between shadow-lg">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Node_State_Crit</p>
-            <p className="text-3xl font-black mt-1" style={{ color: 'var(--neon-pink)' }}>{criticalCount}</p>
-          </div>
-          <AlertTriangle className="w-8 h-8 opacity-40" style={{ color: 'var(--neon-pink)' }} />
+          <AddServerModal />
         </div>
       </div>
 
-      {/* Main Workspace Layout Matrix Splitter - Switched layout structure to standard responsive gap flow */}
-      <div className="flex flex-col lg:flex-row gap-8 w-full items-start">
-        
-        {/* Left Side: Server Clusters Registry Stack */}
-        <div className="w-full lg:w-2/3 space-y-4">
-          <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest pb-1 flex items-center gap-2">
-            <Database className="w-3.5 h-3.5 text-[var(--neon-cyan)]" /> 
-            <span>[// Monitor Cluster Registry]</span>
-          </div>
+      {/* Node Selector Bar */}
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 border-b border-gray-900">
+        <span className="text-xs text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1 mr-2">
+          <Server className="w-3.5 h-3.5 text-cyan-400" /> CLUSTER NODES ({Object.keys(servers).length}):
+        </span>
+        {Object.values(servers).map((srv) => (
+          <button
+            key={srv.serverId}
+            onClick={() => setActiveServerId(srv.serverId)}
+            className={`px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-2 border ${
+              activeServerId === srv.serverId
+                ? 'bg-cyan-950/60 border-cyan-500 text-cyan-300 shadow-sm shadow-cyan-950'
+                : 'bg-[#0b0c10] border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-200'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${srv.status === 'healthy' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            {srv.serverName}
+            <span className="text-[10px] opacity-60 font-mono">({srv.serverId})</span>
+          </button>
+        ))}
+      </div>
 
-          {loading && servers.length === 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[1, 2].map(i => (
-                <div key={i} className="h-40 rounded bg-zinc-900/20 border border-zinc-800 animate-pulse" />
+      {/* Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* CPU */}
+        <div className="border border-cyan-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
+          <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-cyan-400 font-bold flex items-center gap-1">
+            <Cpu className="w-3 h-3" /> 1. CPU PROCESSOR ({currentServer.cpuCores?.length || 0} CORES)
+          </span>
+
+          <div className="space-y-2 mt-1">
+            <div className="flex justify-between text-xs">
+              <span>TOTAL LOAD</span>
+              <span className="text-cyan-400 font-bold">{currentServer.cpuTotal || 0}%</span>
+            </div>
+            <AsciiBar percent={currentServer.cpuTotal || 0} color={currentServer.cpuTotal > 80 ? 'text-red-500' : 'text-cyan-400'} />
+
+            <div className="pt-3 border-t border-gray-900 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs max-h-48 overflow-y-auto custom-scrollbar">
+              {currentServer.cpuCores?.map((val, idx) => (
+                <div key={idx} className="flex justify-between items-center text-gray-400 bg-black/40 px-2 py-1 rounded">
+                  <span>Core {idx}:</span>
+                  <div className="flex items-center gap-2">
+                    <AsciiBar percent={val} color={val > 85 ? 'text-red-400' : 'text-emerald-400'} />
+                    <span className="w-7 text-right font-bold text-gray-300">{val}%</span>
+                  </div>
+                </div>
               ))}
             </div>
-          ) : servers.length === 0 ? (
-            <div className="cyber-panel p-8 text-center rounded border border-zinc-800/80">
-              <div className="inline-flex p-4 rounded bg-zinc-950 border border-zinc-800 mb-4">
-                <Server className="w-8 h-8 text-zinc-600" />
+          </div>
+        </div>
+
+        {/* Memory */}
+        <div className="border border-purple-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
+          <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-purple-400 font-bold flex items-center gap-1">
+            <Layers className="w-3 h-3" /> 2. MEMORY
+          </span>
+
+          <div className="space-y-3 mt-1 text-xs">
+            <div className="flex justify-between">
+              <span className="text-gray-400">Capacity:</span>
+              <span className="text-white font-bold">{currentServer.memory?.totalGiB || 0} GiB</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Active Used:</span>
+              <span className="text-purple-400 font-bold">
+                {currentServer.memory?.usedGiB || 0} GiB ({currentServer.memory?.percent || 0}%)
+              </span>
+            </div>
+            <AsciiBar percent={currentServer.memory?.percent || 0} color={currentServer.memory?.percent > 90 ? 'text-red-500' : 'text-purple-400'} />
+
+            <div className="pt-2 text-[10px] text-gray-500 flex justify-between border-t border-gray-900">
+              <span>SWAP USED: {currentServer.memory?.swapUsedGiB || 0} GiB</span>
+              <span>FREE: {((currentServer.memory?.totalGiB || 0) - (currentServer.memory?.usedGiB || 0)).toFixed(1)} GiB</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Disks */}
+        <div className="border border-emerald-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
+          <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-emerald-400 font-bold flex items-center gap-1">
+            <HardDrive className="w-3 h-3" /> 3. STORAGE PARTITIONS ({currentServer.disks?.length || 0})
+          </span>
+
+          <div className="space-y-3 mt-1 text-xs max-h-52 overflow-y-auto custom-scrollbar">
+            {currentServer.disks?.map((disk, idx) => (
+              <div key={idx} className="space-y-1 bg-black/30 p-2 rounded border border-gray-900">
+                <div className="flex justify-between text-gray-300">
+                  <span className="font-bold text-white">{disk.name}</span>
+                  <span className="text-emerald-400 font-bold">{disk.percent}%</span>
+                </div>
+                <AsciiBar percent={disk.percent} color={disk.percent > 85 ? 'text-red-400' : 'text-emerald-400'} />
+                <div className="flex justify-between text-[10px] text-gray-500">
+                  <span>Free: {(disk.totalGiB - disk.usedGiB).toFixed(1)} GiB</span>
+                  <span>Used: {disk.usedGiB} / {disk.totalGiB} GiB</span>
+                </div>
               </div>
-              <h3 className="text-md font-bold tracking-wider text-zinc-300 uppercase">No active instances registered</h3>
-              <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto font-mono">
-                Initialize the tracking node daemon process onto a host machine target to capture metrics.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {servers.map((server) => (
-                <ServerCard key={server.id} server={server} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right Side: Operational Live Threat Feeds Panel */}
-        <div className="w-full lg:w-1/3 space-y-4">
-          <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest pb-1 flex items-center gap-2">
-            <Cpu className="w-3.5 h-3.5 text-[var(--neon-pink)]" /> 
-            <span>[// Kernel Incident Telemetry Feed]</span>
+            ))}
           </div>
-          <AlertsPanel alerts={alerts} />
         </div>
 
+        {/* Network */}
+        <div className="border border-blue-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
+          <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-blue-400 font-bold flex items-center gap-1">
+            <Wifi className="w-3 h-3" /> 4. NETWORK INTERFACES ({currentServer.network?.length || 0})
+          </span>
+
+          <div className="space-y-3 mt-1 text-xs max-h-52 overflow-y-auto custom-scrollbar">
+            {currentServer.network?.map((net, idx) => (
+              <div key={idx} className="p-2 border border-gray-900 bg-black/50 rounded space-y-1.5">
+                <div className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider">{net.name}</div>
+                <div className="flex justify-between text-gray-300">
+                  <span>▼ DOWNLOAD:</span>
+                  <span className="text-blue-400 font-bold font-mono">{net.download}</span>
+                </div>
+                <div className="flex justify-between text-gray-300">
+                  <span>▲ UPLOAD:</span>
+                  <span className="text-purple-400 font-bold font-mono">{net.upload}</span>
+                </div>
+              </div>
+            ))}
+
+            <div className="text-[10px] text-gray-600 font-mono text-center pt-1 border-t border-gray-900">
+              IP: {currentServer.ipAddress || 'N/A'} // STATUS: ACTIVE
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
-}
+};
+
+export default TerminalDashboard;

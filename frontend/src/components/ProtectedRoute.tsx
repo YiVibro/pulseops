@@ -1,17 +1,33 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-}
+export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const token = localStorage.getItem('token');
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthenticated(!!session);
+    });
 
-  if (!token) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen bg-black text-cyan-400 font-mono flex items-center justify-center">
+        VERIFYING AUTHENTICATION SESSION...
+      </div>
+    );
+  }
+
+  if (!authenticated) {
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
-};
 
-export default ProtectedRoute;
+  return <>{children}</>;
+}
