@@ -23,7 +23,7 @@ export const ServerList: React.FC = () => {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
-      {servers.map((server) => (
+      {servers.map((server:any) => (
         <div
           key={server.id}
           className="border border-gray-700 bg-gray-900 rounded-lg p-4 shadow-md flex flex-col justify-between"

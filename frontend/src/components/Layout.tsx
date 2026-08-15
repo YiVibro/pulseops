@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, LogOut, Activity, Shield } from 'lucide-react';
+import { LayoutDashboard, LogOut, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface Props {

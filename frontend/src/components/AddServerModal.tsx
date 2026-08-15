@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Terminal, Copy, Check, Plus, ShieldCheck } from 'lucide-react';
+import { Copy, Check, Plus, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://18.138.103.202:5000/api';

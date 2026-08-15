@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import type { MetricPoint, Alert } from '../types';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:4000';
+//const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:4000';
 
 interface UseSocketOptions {
   onMetric?: (data: { serverId: string } & MetricPoint) => void;
@@ -15,7 +15,6 @@ export function useSocket(options: UseSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
     const socket = io('http://18.138.103.202:5000', {
   transports: ['polling'],
   upgrade: false,

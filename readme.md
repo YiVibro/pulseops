@@ -1,246 +1,209 @@
-# PulseOps
-
-A real-time infrastructure monitoring platform. Lightweight agents collect CPU, memory, and disk metrics from multiple servers, stream them through Redis to a central backend, and display live charts on a React dashboard — with statistical anomaly detection and Slack alerting.
-
-Built as a self-hosted alternative to Datadog/Prometheus for teams running on a few EC2 instances.
+Here is a clean, professional, and comprehensive **`README.md`** tailored for your **PulseOps** repository. It balances high-level architecture with deep technical installation steps so recruiters, engineers, and open-source contributors can immediately understand and run the project.
 
 ---
 
-## Architecture
+```markdown
+# ⚡ PulseOps — Infrastructure Telemetry & Observer Platform
+
+![PulseOps Terminal Dashboard](https://raw.githubusercontent.com/your-username/pulseops/main/docs/dashboard-preview.png)
+
+**PulseOps** is a low-latency, real-time infrastructure monitoring platform designed to aggregate, store, and display system telemetry across dynamic server clusters. Built with a terminal-inspired TUI aesthetic, it seamlessly handles high-throughput time-series data while providing secure multi-tenant user isolation.
+
+---
+
+## 🏗️ Architecture & Stack Overview
+
+PulseOps uses a decoupled hybrid architecture: a global Edge-deployed React frontend, a containerized Node.js ingestion backend, InfluxDB for time-series persistence, and Supabase for user authentication and access control.
+
 
 ```
-[Agent: API Server] ──┐
-[Agent: DB Server]  ──┼── HMAC-signed JSON ──► Redis Streams
-[Agent: Worker Node]──┘                              │
-                                                      ▼
-                                           Consumer Worker (XREADGROUP)
-                                          ┌───────────┼───────────┐
-                                          ▼           ▼           ▼
-                                    TimescaleDB  Anomaly      Socket.io
-                                          │      Detector         │
-                                          ▼           │           ▼
-                                    Express API   Slack      React Dashboard
-                                          └───────────────────────┘
-                                               REST (historical)
-```
 
----
+┌──────────────────────────────────────────────┐
+│          Frontend (Vercel / Edge)            │
+│  - React 18 + TypeScript + Vite              │
+│  - Terminal Dashboard UI (Lucide Icons)      │
+│  - Supabase JS SDK (JWT Auth & RLS)          │
+└──────────────────────┬───────────────────────┘
+│
+HTTPS / WebSockets (Socket.IO)
+│
+▼
+┌──────────────────────────────────────────────┐
+│           Backend Cluster (AWS EC2)          │
+│  - Express.js API Gateway                    │
+│  - Socket.IO Live Telemetry Broadcaster       │
+│  - Redis Stream Telemetry Buffer             │
+│  - InfluxDB 3.0 Engine (Time-Series Metrics) │
+└──────────────────────────────────────────────┘
+▲
+│ HTTP/JSON Telemetry Stream
+│
+┌──────────────────────────────────────────────┐
+│          Remote Node Collector Agents        │
+│  - Light Bash Script (collector.sh)          │
+│  - Reads /proc/stat, free, df, ip netlink    │
+└──────────────────────────────────────────────┘
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Agent | Node.js, ioredis |
-| Message queue | Redis Streams |
-| Backend | Node.js, Express, TypeScript |
-| Real-time | Socket.io (WebSockets) |
-| Time-series DB | PostgreSQL + TimescaleDB |
-| Anomaly detection | Z-score (rolling 20-point window) |
-| Alerting | Slack Webhook |
-| Frontend | React, Vite, TypeScript, TailwindCSS, Recharts |
-| Auth | JWT |
-| Infrastructure | Docker, Docker Compose |
-
----
-
-## Features
-
-- Live CPU, memory, disk metrics updating every 5 seconds via WebSocket
-- Historical charts with 1h / 6h / 24h time range selector
-- Statistical anomaly detection — z-score on a 20-point rolling window per metric
-- Slack webhook alert on anomaly detection
-- HMAC-SHA256 signature verification on every agent payload
-- Redis stream capped at 1000 entries (prevents memory bloat)
-- Batch writes to TimescaleDB (prevents DB write bottleneck)
-- JWT-protected dashboard and REST API
-- Simulates multiple servers using Docker containers locally
-
----
-
-## Project Structure
-
-```
-pulseops/
-├── agent/
-│   ├── collector.js       # reads /proc/stat, /proc/meminfo
-│   ├── pusher.js          # signs payload, pushes to Redis Stream
-│   ├── package.json
-│   └── Dockerfile
-├── backend/
-│   ├── src/
-│   │   ├── ingestion/
-│   │   │   ├── consumer.ts    # XREADGROUP loop, HMAC verify
-│   │   │   └── writer.ts      # buffered batch writes to TimescaleDB
-│   │   ├── anomaly/
-│   │   │   └── zscore.ts      # rolling z-score detection
-│   │   ├── alerts/
-│   │   │   └── slackWebhook.ts
-│   │   ├── api/routes/
-│   │   │   ├── metrics.ts
-│   │   │   ├── alerts.ts
-│   │   │   ├── servers.ts
-│   │   │   └── auth.ts
-│   │   ├── sockets/
-│   │   │   └── liveMetrics.ts
-│   │   ├── db/
-│   │   │   ├── schema.sql
-│   │   │   └── client.ts
-│   │   └── server.ts
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Layout.tsx
-│   │   │   ├── ServerCard.tsx
-│   │   │   ├── MetricChart.tsx
-│   │   │   ├── AlertsPanel.tsx
-│   │   │   └── ProtectedRoute.tsx
-│   │   ├── pages/
-│   │   │   ├── Login.tsx
-│   │   │   ├── Dashboard.tsx
-│   │   │   └── ServerDetail.tsx
-│   │   ├── hooks/
-│   │   │   └── useSocket.ts
-│   │   └── types.ts
-│   ├── .env
-│   └── package.json
-└── docker-compose.yml
 ```
 
 ---
 
-## Getting Started
+## ✨ Key Features
 
-### Prerequisites
+* 💻 **Vortex-TUI Dashboard:** Retro-futuristic, high-contrast terminal UI with live ASCII progress bars for CPU, Memory, Disk, and Network performance.
+* ⚡ **Sub-Second Telemetry Ingestion:** Uses Redis Streams and InfluxDB 3.0 to ingest system metrics with negligible latency.
+* 🔐 **Multi-Tenant Server Isolation:** Powered by **Supabase Row-Level Security (RLS)**. Operators only view and manage telemetry streams from servers bound to their account.
+* 🛠️ **Dynamic Node Onboarding:** One-click single-use provisioning tokens for seamless agent deployment on Ubuntu/Debian Linux nodes via a single `curl | bash` command.
+* 📊 **Deep System Telemetry:** Measures individual CPU core loads, exact RAM and Swap usage in GiB, mounted storage partition capacity, and real-time network link speeds.
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [Node.js 20+](https://nodejs.org/)
+---
 
-### 1. Clone the repo
+## 🛠️ Tech Stack
+
+### **Frontend**
+* **Framework:** React 18 (Vite, TypeScript)
+* **Styling:** Tailwind CSS, Lucide React
+* **Authentication:** Supabase Auth SDK
+* **Real-time Engine:** Socket.IO Client
+
+### **Backend & Storage**
+* **Runtime:** Node.js, Express.js
+* **Time-Series Database:** InfluxDB 3.0 (SQL engine)
+* **Auth & Relations Database:** Supabase (PostgreSQL with RLS)
+* **Cache & Buffering:** Redis Pub/Sub Streams
+* **Containerization:** Docker & Docker Compose
+
+---
+
+## 📂 Project Structure
+
+This repository contains the standalone **PulseOps Frontend**.
+
+```text
+pulseops-frontend/
+├── public/                  # Static assets
+├── src/
+│   ├── components/          # AddServerModal, Auth, ProtectedRoute, etc.
+│   ├── hooks/               # Custom hooks (useSocket, useServers)
+│   ├── lib/                 # Supabase and Socket.IO client instances
+│   ├── pages/               # Login, TerminalDashboard, ServerDetail
+│   ├── App.tsx              # React Router v6 setup
+│   └── main.tsx             # Application entrypoint
+├── vercel.json              # SPA client-side rewrite configurations
+├── vite.config.ts           # Vite build settings
+└── package.json
+
+```
+
+---
+
+## 🚀 Quickstart & Local Setup
+
+### **Prerequisites**
+
+* **Node.js**: `v18.x` or higher
+* **npm** or **yarn**
+* Active **Supabase** project instance
+* Running **PulseOps Backend API** (EC2 / Local Docker)
+
+---
+
+### **1. Clone the Repository**
 
 ```bash
-git clone https://github.com/YiVibro/PulseOps.git
-cd pulseops
+git clone [https://github.com/your-username/pulseops-frontend.git](https://github.com/your-username/pulseops-frontend.git)
+cd pulseops-frontend
+
 ```
 
-### 2. Start backend + agents with Docker
+### **2. Install Dependencies**
 
 ```bash
-docker-compose up --build
+npm install
+
 ```
 
-This starts:
-- Redis (message broker)
-- TimescaleDB (time-series storage)
-- Express backend + consumer worker
-- 3 simulated agent containers (API Server, DB Server, Worker Node)
+### **3. Configure Environment Variables**
 
-Wait for:
-```
-backend-1 | Backend running on port 4000
+Create a `.env.local` file in the root directory:
+
+```env
+# Supabase Configuration
+VITE_SUPABASE_URL=[https://your-project-id.supabase.co](https://your-project-id.supabase.co)
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# PulseOps Ingestion & Telemetry Backend
+VITE_API_URL=[http://18.138.103.202:5000](http://18.138.103.202:5000)
+
 ```
 
-### 3. Seed the database (first time only)
+### **4. Start the Development Server**
 
 ```bash
-docker exec -it pulseops-timescaledb-1 psql -U postgres -d devops_monitor
+npm run dev
+
 ```
+
+Visit `http://localhost:5173` in your browser.
+
+---
+
+## 🔐 Database & Auth Configuration (Supabase Setup)
+
+To allow multi-tenant isolation so users can only view their own registered servers, execute the following script in your **Supabase SQL Editor**:
 
 ```sql
-INSERT INTO servers (id, label, secret_hash) VALUES
-('api-server-01', 'API Server', 'secret_api_server'),
-('db-server-01', 'Database Server', 'secret_db_server'),
-('worker-01', 'Worker Node', 'secret_worker')
-ON CONFLICT DO NOTHING;
-\q
+-- 1. Create Servers Table linked to auth.users
+CREATE TABLE public.servers (
+  id VARCHAR(64) PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  label VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 2. Enable Row-Level Security (RLS)
+ALTER TABLE public.servers ENABLE ROW LEVEL SECURITY;
+
+-- 3. Define RLS Access Policies
+CREATE POLICY "Users can select their own servers"
+  ON public.servers FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own servers"
+  ON public.servers FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own servers"
+  ON public.servers FOR DELETE
+  USING (auth.uid() = user_id);
+
 ```
 
-### 4. Start the frontend
+---
 
-```bash
-cd frontend
-npm install
-npm run dev
+## 🌐 Deploying to Vercel
+
+PulseOps is optimized for single-command production deployment on **Vercel**:
+
+1. Push your repository to GitHub.
+2. Import the project into **[Vercel](https://vercel.com)**.
+3. Configure Environment Variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_URL`).
+4. Click **Deploy**.
+
+> **Note:** The included `vercel.json` ensures smooth single-page navigation without `404 Not Found` errors when directly visiting protected routes like `/terminal` or `/login`.
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://www.google.com/search?q=https://github.com/your-username/pulseops/issues).
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. See `LICENSE` for more information.
+
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
-
-### 5. Login
-
-| Field | Value |
-|-------|-------|
-| Email | `admin@monitor.com` |
-| Password | `admin123` |
-
----
-
-## Demo — Trigger a CPU Spike
-
-```bash
-docker exec -it pulseops-agent-api-server-1 sh
-apk add stress
-stress --cpu 4 --timeout 30
 ```
-
-Watch the API Server card turn critical on the dashboard and a Slack alert fire within two polling cycles.
-
----
-
-## Environment Variables
-
-### Backend (`docker-compose.yml`)
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection URL |
-| `JWT_SECRET` | Secret for signing JWT tokens |
-| `ADMIN_EMAIL` | Dashboard login email |
-| `ADMIN_PASSWORD` | Dashboard login password |
-| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL for alerts |
-| `FRONTEND_URL` | Frontend origin for CORS |
-
-### Frontend (`.env`)
-
-| Variable | Description |
-|----------|-------------|
-| `VITE_API_URL` | Backend REST API URL |
-| `VITE_WS_URL` | Backend WebSocket URL |
-
----
-
-## Security
-
-- **HMAC-SHA256** signature on every agent payload — unauthenticated data is dropped before touching the database
-- **Redis MAXLEN 1000** — prevents memory exhaustion from a misbehaving agent
-- **JWT authentication** on all API endpoints and WebSocket connections
-- **Non-root agent** — agent process only reads from `/proc`, no system write access
-- **TLS-ready** — configure Nginx reverse proxy with Let's Encrypt for production
-
----
-
-## Scaling
-
-| Concern | Solution |
-|---------|----------|
-| More agents | Just run more agent containers — Redis handles concurrent XADD |
-| More consumers | Run multiple consumer instances — Redis consumer groups load-balance |
-| DB growth | TimescaleDB automatic time-based partitioning + compression |
-| Multi-server WebSocket | Add Redis pub/sub adapter to Socket.io |
-
----
-
-## Interview Talking Points
-
-- Why Redis Streams over direct DB writes? — Decouples agents from DB, handles backpressure, guarantees at-least-once delivery via consumer groups
-- Why TimescaleDB? — Automatic time partitioning makes range queries fast at scale without changing SQL syntax
-- Why z-score for anomaly detection? — Simple, interpretable, no black-box ML, works on rolling baseline so it adapts to each server's normal behaviour
-- Why React + Vite over Next.js? — Internal dashboard with no SEO requirements; persistent WebSocket connections don't work well with Next.js serverless model
-
----
-
-## License
-
-MIT
