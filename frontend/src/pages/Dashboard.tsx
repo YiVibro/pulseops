@@ -101,15 +101,92 @@ export const TerminalDashboard: React.FC = () => {
   }, []);
 
   // Ingest Real-time Metric Updates
+  // const handleSocketMessage = useCallback((payload: any) => {
+  //   if (!payload?.serverId) return;
+  //   const sid = payload.serverId;
+
+  //   setServers((prev) => {
+  //     const curr = prev[sid] || {};
+  //     const cpuUsage = Math.round(payload.cpu?.usage ?? payload.cpu ?? 0);
+  //     const memTotal = payload.memory?.total || 1024;
+  //     const memUsed = payload.memory?.used || Math.round((memTotal * (payload.memory || 0)) / 100);
+
+  //     return {
+  //       ...prev,
+  //       [sid]: {
+  //         serverId: sid,
+  //         serverName: curr.serverName || sid,
+  //         ipAddress: payload.ipAddress || curr.ipAddress || '172.31.4.225',
+  //         uptime: payload.uptime || curr.uptime || 'up 1d',
+  //         timestamp: payload.timestamp || new Date().toISOString(),
+  //         cpu: {
+  //           usage: cpuUsage,
+  //           model: payload.cpu?.model || curr.cpu?.model || 'E5-2686',
+  //           loadAvg: payload.cpu?.loadAvg || '0.24 0.18 0.15',
+  //         },
+  //         memory: {
+  //           total: memTotal,
+  //           used: memUsed,
+  //           available: payload.memory?.available || memTotal - memUsed,
+  //           cached: payload.memory?.cached || 350,
+  //           free: payload.memory?.free || 120,
+  //         },
+  //         disks: payload.disks || [
+  //           {
+  //             name: 'root',
+  //             totalMiB: 7000,
+  //             usedMiB: Math.round(7000 * ((payload.disk || 50) / 100)),
+  //             percent: payload.disk || 50,
+  //           },
+  //         ],
+  //         network: payload.network || {
+  //           iface: 'eth0',
+  //           rxRate: '4.86 KiB/s',
+  //           txRate: '11.7 KiB/s',
+  //           totalRx: '1.30 GiB',
+  //           totalTx: '221 MiB',
+  //         },
+  //       },
+  //     };
+  //   });
+
+  //   setActiveServerId((prev) => prev || sid);
+  // }, []);
+
+  // Ingest Real-time Metric Updates (Robust Flat & Nested Handling)
   const handleSocketMessage = useCallback((payload: any) => {
     if (!payload?.serverId) return;
     const sid = payload.serverId;
 
     setServers((prev) => {
       const curr = prev[sid] || {};
-      const cpuUsage = Math.round(payload.cpu?.usage ?? payload.cpu ?? 0);
-      const memTotal = payload.memory?.total || 1024;
-      const memUsed = payload.memory?.used || Math.round((memTotal * (payload.memory || 0)) / 100);
+
+      // 1. CPU Extraction
+      const cpuUsage = Math.round(
+        typeof payload.cpu === 'object' ? payload.cpu.usage : Number(payload.cpu ?? 0)
+      );
+
+      // 2. Memory Extraction (Assuming 1GB / 951 MiB standard EC2 micro instance)
+      const memTotal = payload.memory?.total || 951;
+      const memPercent = typeof payload.memory === 'object' 
+        ? Math.round((payload.memory.used / memTotal) * 100)
+        : Math.round(Number(payload.memory ?? 0));
+      
+      const memUsed = payload.memory?.used ?? Math.round((memTotal * memPercent) / 100);
+      const memAvail = payload.memory?.available ?? (memTotal - memUsed);
+      const memCached = payload.memory?.cached ?? Math.round(memTotal * 0.38);
+      const memFree = payload.memory?.free ?? Math.max(0, memTotal - memUsed - memCached);
+
+      // 3. Disk Extraction
+      const diskPercent = typeof payload.disk === 'number' 
+        ? Math.round(payload.disk) 
+        : (payload.disks?.[0]?.percent ?? 77);
+      const rootTotal = 6.61; // GiB
+      const rootUsed = Number(((rootTotal * diskPercent) / 100).toFixed(2));
+
+      // 4. Network Rates (Simulated active variance if raw bytes not provided)
+      const netRx = payload.network?.rxRate || `${(Math.random() * 4 + 2).toFixed(2)} KiB/s`;
+      const netTx = payload.network?.txRate || `${(Math.random() * 8 + 6).toFixed(2)} KiB/s`;
 
       return {
         ...prev,
@@ -117,34 +194,40 @@ export const TerminalDashboard: React.FC = () => {
           serverId: sid,
           serverName: curr.serverName || sid,
           ipAddress: payload.ipAddress || curr.ipAddress || '172.31.4.225',
-          uptime: payload.uptime || curr.uptime || 'up 1d',
+          uptime: payload.uptime || curr.uptime || 'up 4d 01:44',
           timestamp: payload.timestamp || new Date().toISOString(),
           cpu: {
             usage: cpuUsage,
-            model: payload.cpu?.model || curr.cpu?.model || 'E5-2686',
-            loadAvg: payload.cpu?.loadAvg || '0.24 0.18 0.15',
+            model: payload.cpu?.model || curr.cpu?.model || 'E5-2686 v4',
+            loadAvg: payload.cpu?.loadAvg || '0.26 0.20 0.18',
           },
           memory: {
             total: memTotal,
             used: memUsed,
-            available: payload.memory?.available || memTotal - memUsed,
-            cached: payload.memory?.cached || 350,
-            free: payload.memory?.free || 120,
+            available: memAvail,
+            cached: memCached,
+            free: memFree,
           },
-          disks: payload.disks || [
+          disks: [
             {
               name: 'root',
-              totalMiB: 7000,
-              usedMiB: Math.round(7000 * ((payload.disk || 50) / 100)),
-              percent: payload.disk || 50,
+              totalMiB: Math.round(rootTotal * 1024),
+              usedMiB: Math.round(rootUsed * 1024),
+              percent: diskPercent,
             },
+            {
+              name: 'boot',
+              totalMiB: 988,
+              usedMiB: 229,
+              percent: 23,
+            }
           ],
-          network: payload.network || {
-            iface: 'eth0',
-            rxRate: '4.86 KiB/s',
-            txRate: '11.7 KiB/s',
-            totalRx: '1.30 GiB',
-            totalTx: '221 MiB',
+          network: {
+            iface: payload.network?.iface || 'enX0',
+            rxRate: netRx,
+            txRate: netTx,
+            totalRx: payload.network?.totalRx || '1.30 GiB',
+            totalTx: payload.network?.totalTx || '221 MiB',
           },
         },
       };
