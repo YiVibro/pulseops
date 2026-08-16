@@ -3,7 +3,8 @@ import axios from 'axios';
 import { Copy, Check, Plus, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://18.138.103.202:5000/api';
+// Base backend URL without trailing slash or /api
+const BASE_URL = (import.meta.env.VITE_API_URL || 'https://api.pulseops.yivibro.in').replace(/\/api\/?$/, '').replace(/\/$/, '');
 
 export const AddServerModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,14 +15,20 @@ export const AddServerModal: React.FC = () => {
   const generateInstallerCommand = async () => {
     setLoading(true);
     try {
-      // 1. Get current logged-in session from Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      // 1. Get active session from Supabase
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('You must be logged in to onboard a server.');
+      }
 
-      // 2. Pass JWT token & user.id to backend
+      const token = session.access_token;
+      const userId = session.user.id;
+
+      // 2. Request setup token with Supabase JWT & userId
       const res = await axios.post(
-        `${API_URL}/api/token/generate-setup-token`,
-        { userId: session?.user?.id },
+        `${BASE_URL}/api/token/generate-setup-token`,
+        { userId },
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -29,16 +36,14 @@ export const AddServerModal: React.FC = () => {
         }
       );
 
-      setCommand(res.data.command || `curl -s "${API_URL}/install.sh?token=${res.data.token}" | bash`);
-      setIsOpen(true);
-    } catch (err) {
-      console.error('Failed to issue setup token:', err);
-      // Fallback command if backend token endpoint fails
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCommand(`curl -s "http://18.138.103.202:5000/install.sh?userId=${user.id}" | bash`);
-        setIsOpen(true);
+      if (res.data?.command) {
+        setCommand(res.data.command);
+      } else {
+        setCommand(`curl -sSL ${BASE_URL}/install.sh | sudo bash -s -- "${res.data.setupToken}" "${BASE_URL}"`);
       }
+      setIsOpen(true);
+    } catch (err: any) {
+      console.error('Failed to issue setup token:', err?.response?.data || err.message);
     } finally {
       setLoading(false);
     }

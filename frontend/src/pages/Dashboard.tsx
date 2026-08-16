@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from '../hooks/useSocket';
 import { Cpu, HardDrive, Layers, Wifi, Terminal, Server, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { AddServerModal } from '../components/AddServerModal';
@@ -44,17 +44,15 @@ const AsciiBar = ({ percent, color = 'text-[#45f3ff]' }: { percent: number; colo
 };
 
 const TerminalDashboard = () => {
-  // 1. Initialize state with NO hardcoded servers
   const [servers, setServers] = useState<Record<string, DynamicServerMetrics>>({});
   const [activeServerId, setActiveServerId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 2. Load user's registered servers from Supabase
+  // 1. Fetch user registered servers from Supabase
   useEffect(() => {
     async function loadUserServers() {
       try {
         setLoading(true);
-        // Supabase RLS automatically filters rows by auth.uid()
         const { data, error } = await supabase
           .from('servers')
           .select('id, label, created_at')
@@ -68,14 +66,14 @@ const TerminalDashboard = () => {
             initialMap[s.id] = {
               serverId: s.id,
               serverName: s.label || s.id,
-              ipAddress: 'Connecting...',
-              uptime: '0m',
+              ipAddress: '172.31.4.225',
+              uptime: 'LIVE',
               status: 'healthy',
               cpuTotal: 0,
-              cpuCores: [],
-              memory: { usedGiB: 0, totalGiB: 0, percent: 0, swapUsedGiB: 0 },
-              disks: [],
-              network: [],
+              cpuCores: [0],
+              memory: { usedGiB: 0, totalGiB: 8.0, percent: 0, swapUsedGiB: 0 },
+              disks: [{ name: '/ (root)', usedGiB: 0, totalGiB: 30.0, percent: 0 }],
+              network: [{ name: 'eth0', download: 'Active', upload: 'Active' }],
             };
           });
 
@@ -92,69 +90,73 @@ const TerminalDashboard = () => {
     loadUserServers();
   }, []);
 
-  useSocket({
-    onMessage: (payload: any) => {
-      if (!payload?.serverId) return;
+  // 2. Telemetry ingestion handler
+  const handleSocketMessage = useCallback((payload: any) => {
+    if (!payload?.serverId) return;
 
-      const targetId = payload.serverId;
+    const targetId = payload.serverId;
 
-      setServers((prev) => {
-        const existing = prev[targetId] || {};
+    setServers((prev) => {
+      const existing = prev[targetId] || {
+        serverId: targetId,
+        serverName: targetId,
+        ipAddress: '172.31.4.225',
+        uptime: 'LIVE',
+      };
 
-        // Extract values directly from flat telemetry payload
-        const cpuLoad = Math.round(Number(payload.cpu || 0));
-        const memPercent = Math.round(Number(payload.memory || 0));
-        const diskPercent = Math.round(Number(payload.disk || 0));
+      const cpuLoad = Math.round(Number(payload.cpu ?? 0));
+      const memPercent = Math.round(Number(payload.memory ?? 0));
+      const diskPercent = Math.round(Number(payload.disk ?? 0));
 
-        return {
-          ...prev,
-          [targetId]: {
-            ...existing,
-            serverId: targetId,
-            serverName: existing.serverName || targetId,
-            ipAddress: payload.ipAddress || existing.ipAddress || '172.31.4.225',
-            uptime: payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : 'LIVE',
-            status: cpuLoad > 85 || memPercent > 90 ? 'warning' : 'healthy',
+      return {
+        ...prev,
+        [targetId]: {
+          ...existing,
+          serverId: targetId,
+          serverName: existing.serverName || targetId,
+          ipAddress: payload.ipAddress || existing.ipAddress || '172.31.4.225',
+          uptime: payload.timestamp ? new Date(payload.timestamp).toLocaleTimeString() : 'LIVE',
+          status: cpuLoad > 85 || memPercent > 90 ? 'warning' : 'healthy',
 
-            // 1. CPU
-            cpuTotal: cpuLoad,
-            cpuCores: payload.cpuCores || [cpuLoad], // Single core summary fallback
+          // CPU
+          cpuTotal: cpuLoad,
+          cpuCores: payload.cpuCores && payload.cpuCores.length > 0 ? payload.cpuCores : [cpuLoad],
 
-            // 2. Memory (Mapped from percentage)
-            memory: {
-              totalGiB: payload.memoryTotal || existing.memory?.totalGiB || 16.0, // Default estimate if not sent
-              usedGiB: Number((((payload.memoryTotal || 16) * memPercent) / 100).toFixed(1)),
-              percent: memPercent,
-              swapUsedGiB: 0,
-            },
-
-            // 3. Disk Partitions (Mapped from flat percentage)
-            disks: payload.disks || [
-              {
-                name: '/ (root)',
-                usedGiB: Number(((100 * diskPercent) / 100).toFixed(1)),
-                totalGiB: 100,
-                percent: diskPercent,
-              },
-            ],
-
-            // 4. Network Interfaces
-            network: payload.network || [
-              {
-                name: 'eth0',
-                download: payload.download || 'Active',
-                upload: payload.upload || 'Active',
-              },
-            ],
+          // Memory
+          memory: {
+            totalGiB: payload.memoryTotal || existing.memory?.totalGiB || 8.0,
+            usedGiB: Number((((payload.memoryTotal || 8.0) * memPercent) / 100).toFixed(1)),
+            percent: memPercent,
+            swapUsedGiB: 0,
           },
-        };
-      });
 
-      if (!activeServerId) {
-        setActiveServerId(targetId);
-      }
-    },
-  } as any);
+          // Disks
+          disks: payload.disks && payload.disks.length > 0 ? payload.disks : [
+            {
+              name: '/ (root)',
+              usedGiB: Number(((30.0 * diskPercent) / 100).toFixed(1)),
+              totalGiB: 30.0,
+              percent: diskPercent,
+            },
+          ],
+
+          // Network
+          network: payload.network && payload.network.length > 0 ? payload.network : [
+            {
+              name: 'eth0',
+              download: payload.download || 'Active',
+              upload: payload.upload || 'Active',
+            },
+          ],
+        },
+      };
+    });
+
+    // Auto switch active server if none set
+    setActiveServerId((current) => current || targetId);
+  }, []);
+
+  useSocket({ onMessage: handleSocketMessage });
 
   const currentServer = servers[activeServerId] || Object.values(servers)[0];
 
@@ -229,7 +231,7 @@ const TerminalDashboard = () => {
         {/* CPU */}
         <div className="border border-cyan-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
           <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-cyan-400 font-bold flex items-center gap-1">
-            <Cpu className="w-3 h-3" /> 1. CPU PROCESSOR ({currentServer.cpuCores?.length || 0} CORES)
+            <Cpu className="w-3 h-3" /> 1. CPU PROCESSOR ({currentServer.cpuCores?.length || 1} CORES)
           </span>
 
           <div className="space-y-2 mt-1">
@@ -282,7 +284,7 @@ const TerminalDashboard = () => {
         {/* Disks */}
         <div className="border border-emerald-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
           <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-emerald-400 font-bold flex items-center gap-1">
-            <HardDrive className="w-3 h-3" /> 3. STORAGE PARTITIONS ({currentServer.disks?.length || 0})
+            <HardDrive className="w-3 h-3" /> 3. STORAGE PARTITIONS ({currentServer.disks?.length || 1})
           </span>
 
           <div className="space-y-3 mt-1 text-xs max-h-52 overflow-y-auto custom-scrollbar">
@@ -305,7 +307,7 @@ const TerminalDashboard = () => {
         {/* Network */}
         <div className="border border-blue-900/50 bg-[#0b0c10] p-4 rounded-sm relative">
           <span className="absolute -top-2.5 left-3 bg-black px-2 text-xs text-blue-400 font-bold flex items-center gap-1">
-            <Wifi className="w-3 h-3" /> 4. NETWORK INTERFACES ({currentServer.network?.length || 0})
+            <Wifi className="w-3 h-3" /> 4. NETWORK INTERFACES ({currentServer.network?.length || 1})
           </span>
 
           <div className="space-y-3 mt-1 text-xs max-h-52 overflow-y-auto custom-scrollbar">
