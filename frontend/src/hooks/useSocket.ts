@@ -15,7 +15,7 @@ export function useSocket(options: UseSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const socket = io('http://18.138.103.202:5000', {
+    const socket = io(import.meta.env.VITE_WS_URL || 'https://api.pulseops.yivibro.in', {
   transports: ['polling'],
   upgrade: false,
   autoConnect: true,
